@@ -1,5 +1,5 @@
 # kickstarter-analysis
-## Estadisticas de los jugadores y jugadoras de la NBA incluidas los salarios
+## Análisis de iniciativas y proyectos de crowfunding
 
 ## Autor
 
