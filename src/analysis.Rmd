@@ -17,11 +17,17 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(eval=T, echo=T)
+library(dplyr)
+library(janitor)
+library(randomForest)
+library(ggplot2)
+library(gmodels)
 ```
 
 # Introducción
+## Descripción del dataset
 
-Para esta práctica se ha elegido el set de datos [Kickstarter Projects](https://www.kaggle.com/kemical/kickstarter-projects) de Kaggle.com, con datos relativos a iniciativas que buscan financiación en la página [Kickstarter.com](https://www.kickstarter.com/).
+Para esta práctica se ha elegido el set de datos [Kickstarter Projects](https://www.kaggle.com/kemical/kickstarter-projects) de Kaggle, con datos relativos a iniciativas que buscan financiación en la página [Kickstarter.com](https://www.kickstarter.com/).
 
 Es un set de datos interesantes por el gran volumen de observaciones (más de 300K), y que se asemeja al volumen del que de datos que se puede manejar en proyectos reales de ciencia de datos. Por otro lado, es interesante por ser un set relativamente actual y por las variables disponibles. Éstas son tanto cuantitativas como cualitativas, y alguna de ellas tienen un número alto de categorías.
 
@@ -46,12 +52,111 @@ A partir de estas variables de entradas se intenta predecir cómo acabará una ini
 
 1. __state__. Categórico. Resultado de la iniciativa al finalizar el plazo. 
 
+### Carga de datos
+
+Realizamos la carga de datos. En este caso, y puesto que tenemos variables de tipo fecha, vamos a cargar las variables categóricas como strings para realizar la conversión al tipo esperado a posteriori.
+
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
-# ```{r setup}
-knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
-library(janitor)
-library(randomForest)
-library(ggplot2)
-library(gmodels)
+path <- "../csv/ks-projects-201801.csv"
+original <- read.csv(path, header=T,sep=",", encoding = "UTF-8", stringsAsFactors=FALSE)
+
+glimpse(original)
+
+original$launched <- as.Date(original$launched)
+original$deadline <- as.Date(original$deadline)
+original$category <- as.factor(original$category)
+original$main_category <- as.factor(original$main_category)
+original$currency <- as.factor(original$currency)
+original$state <- as.factor(original$state)
+original$country <- as.factor(original$country)
 ```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+glimpse(original)
+```
+
+## Selección de datos
+
+En el listado de variables de la sección anterior vemos que el set de datos incluye información duplicada. La cantidad objetivo está disponible en la moneda original de la promoción (_Goal_), así como su conversión a USD (_USD Goal Real_). Por otro lado, la cantidad final recaudada está disponible en la divisa original (_Pledged_), la conversión a USD realizada por la plataforma (_USD Pledged_), y la conversión a USD realizada por el autor del set de datos (_USD Goal Real_). Puesto que la información de estas variables es redundante, se va a mantener únicamente la versión estandarizada de estos datos. Esto es, la conversión de las dos variables realizadas por el autor del set de datos. 
+
+Por otro lado, para realizar la analítica de datos no son necesarios los campos que identifican las observaciones (_ID_ y _Name_).
+
+Finalmente, y puesto que no se va a realizar un análisis de series temporales, se puede descartar las variables de tipo fecha (_Launched_ y _Deadline_). Sin embargo, a partir de estas variables es posible derivar un nuevo campo que podría tener influencia en el resultado de la recaudación de fondos: la duración de la campaña. 
+
+Vamos a derivar este dato, y a elmininar las variables innecesarias. Estas modificaciones se realizarán sobre una copia del set original, por si fuese necesario realizar alguna comprobación sobre este set más adelante. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Copia del set de datos
+mydata <- original
+# Derivación de la dureación
+mydata$duration_tmp <- mydata$deadline - mydata$launched
+mydata$duration <- as.numeric(mydata$duration_tmp, units="days")
+# Borrado de las variables innecesarias
+mydata <- select(mydata, -ID, -name, -goal, -pledged, -usd.pledged, -launched, -deadline, -duration_tmp)
+# Resumen de los datos seleccionados
+glimpse(mydata)
+```
+
+Como se puede observar en la tabla anterior, se ha reducido el set a ocho inputs y la etiqueta de clase.
+
+# Limpieza de datos
+## Valores perdidos
+
+En primer lugar, vamos a comprobar si existen observaciones con el valor NA en alguna variable:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+colSums(is.na(mydata))
+```
+
+Vemos que no existen valores sin imputar. Vamos a comprobar también cuales son los posibles valores de las variables de tipo "Factor" para comprobar si los valores nulos se han reemplazado por alguna etiqueta:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+unique(mydata$category)
+unique(mydata$main_category)
+unique(mydata$currency)
+unique(mydata$state)
+unique(mydata$country)
+```
+
+Vemos que la etiqueta de clase (variable _state_) tiene seis posibles valores entre los que se encuentran "undefined" y "live". El primero se corresponde a una etiqueta que se ha dado a los valores perdidos, y el segundo a campañas que estaban en activo cuando se hizo la recopilación de datos. Las observaciones de este segundo caso no aportan valor para predecir el resultado de una campaña al tratarse de observaciones de campañas no finalizadas, y por tanto habrá que eliminarlas. En cuanto al primer caso, sería posible imputar valores o eliminar también las observaciones asociadas. Para decidir entre una u otra, vamos a comprobar el porcentaje de observaciones de esta clase en una tabla de frecuencias:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+tabyl(mydata$state)
+```
+
+Las observaciones con estado _"undefined"_ suponen menos del 1% del total. Por ello, y por el hecho de que el número total de observaciones es muy amplio, vamos a eliminar las observaciones asociadas:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+mydata <- subset(mydata, state != "undefined" & state != "live")
+# Creamos un factor nuevo para elminar las categorías descartadas
+mydata$state <- as.factor(as.character(mydata$state))
+# Tabla de frecuencias después del ajuste
+tabyl(mydata$state)
+```
+
+Por otro lado, vemos que existe un valor anómalo ("N,0\") en la variable country. Este valor probablemente se deba a un error a la hora de hacer el scrapping de los datos. Comprobamos el número de observaciones afectadas:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+nrow(subset(mydata, (country == "N,0\"")))
+```
+
+Y procedemos de forma análoga a la anterior: el número de observaciones afectadas es despreciable comparado con el total, y por tanto se pueden descartar sin problemas:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+mydata <- subset(mydata, (country != "N,0\""))
+# Creamos un factor nuevo para elminar la categoría incorrecta
+mydata$country <- as.factor(as.character(mydata$country))
+```
+
+## Valores extremos
+
+# Análisis de datos
+
+# Representación de resultados
+
+# Conclusión
+
+# Referencias y bibliografía
+
+
+
