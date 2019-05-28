@@ -1,0 +1,57 @@
+---
+title: 'Kickstarter. Análisis de proyectos de crowfunding'
+author: "Adam Kepa"
+date: "28 de mayo de 2019"
+output:
+  html_document:
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: true 
+  word_document: default
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval=T, echo=T)
+```
+
+# Introducción
+
+Para esta práctica se ha elegido el set de datos [Kickstarter Projects](https://www.kaggle.com/kemical/kickstarter-projects) de Kaggle.com, con datos relativos a iniciativas que buscan financiación en la página [Kickstarter.com](https://www.kickstarter.com/).
+
+Es un set de datos interesantes por el gran volumen de observaciones (más de 300K), y que se asemeja al volumen del que de datos que se puede manejar en proyectos reales de ciencia de datos. Por otro lado, es interesante por ser un set relativamente actual y por las variables disponibles. Éstas son tanto cuantitativas como cualitativas, y alguna de ellas tienen un número alto de categorías.
+
+El listado completo de variables es el siguiente:
+
+1. __ID__. Numérico. Identificador de la iniciativa.
+2. __Name__. Categórico. Nombre de la iniciativa.
+3. __Main category__. Categórico. Categoría de la iniciativa (nivel 1).
+4. __Category__. Categórico. Categoría de la iniciativa (nivel 2).
+5. __Currency__. Categórico. Moneda en la que se realiza la recaudación.
+6. __Deadline__. Fecha. Fecha en la que acaba la recaudación.
+7. __Goal__. Numérico. Cantidad de dinero que se intenta recaudar. 
+8. __Launched__. Timestamp. Fecha y hora en la que se inició la iniciativa. 
+9. __Pledged__. Numérico. Dinero recaudado al cumplirse la fecha de fin. 
+10. __Backers__. Numérico. Número de patrocinadores que han participado en la iniciativa
+11. __Country__. Categórico. País de origen de la iniciativa.
+12. __USD Pledged__. Numérico. Conversión de la variable _Pledged_ a la divisa USD, realizado por Kickstarter.com
+13. __USD Pledged Real__. Numérico. Conversión de la variable _Pledged_ a la divisa USD, realizado por el autor del dataset.
+14. __USD Goal Real__. Numérico. Conversión de la variable _Goal_ a la divisa USD, realizado por el autor del dataset.
+
+A partir de estas variables de entradas se intenta predecir cómo acabará una iniciativa. Este estado final de una iniciativa se indica en el campo state: 
+
+1. __state__. Categórico. Resultado de la iniciativa al finalizar el plazo. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# ```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(janitor)
+library(randomForest)
+library(ggplot2)
+library(gmodels)
+```
