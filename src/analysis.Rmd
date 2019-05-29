@@ -8,7 +8,9 @@ output:
     theme: cosmo
     toc: yes
     toc_depth: 3
-    toc_float: true 
+    toc_float: true
+    params: 
+      output_dir: "../pdf"
   word_document: default
   pdf_document:
     highlight: zenburn
@@ -56,7 +58,7 @@ A partir de estas variables de entradas se intenta predecir cómo acabará una ini
 
 Realizamos la carga de datos. En este caso, y puesto que tenemos variables de tipo fecha, vamos a cargar las variables categóricas como strings para realizar la conversión al tipo esperado a posteriori.
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 path <- "../csv/ks-projects-201801.csv"
 original <- read.csv(path, header=T,sep=",", encoding = "UTF-8", stringsAsFactors=FALSE)
 
@@ -71,7 +73,7 @@ original$state <- as.factor(original$state)
 original$country <- as.factor(original$country)
 ```
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 glimpse(original)
 ```
 
@@ -85,12 +87,13 @@ Finalmente, y puesto que no se va a realizar un análisis de series temporales, s
 
 Vamos a derivar este dato, y a elmininar las variables innecesarias. Estas modificaciones se realizarán sobre una copia del set original, por si fuese necesario realizar alguna comprobación sobre este set más adelante. 
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 # Copia del set de datos
 mydata <- original
-# Derivación de la dureación
+# Derivación de la duración
 mydata$duration_tmp <- mydata$deadline - mydata$launched
 mydata$duration <- as.numeric(mydata$duration_tmp, units="days")
+original$duration <- as.numeric(mydata$duration_tmp, units="days")
 # Borrado de las variables innecesarias
 mydata <- select(mydata, -ID, -name, -goal, -pledged, -usd.pledged, -launched, -deadline, -duration_tmp)
 # Resumen de los datos seleccionados
@@ -104,13 +107,13 @@ Como se puede observar en la tabla anterior, se ha reducido el set a ocho inputs
 
 En primer lugar, vamos a comprobar si existen observaciones con el valor NA en alguna variable:
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 colSums(is.na(mydata))
 ```
 
 Vemos que no existen valores sin imputar. Vamos a comprobar también cuales son los posibles valores de las variables de tipo "Factor" para comprobar si los valores nulos se han reemplazado por alguna etiqueta:
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 unique(mydata$category)
 unique(mydata$main_category)
 unique(mydata$currency)
@@ -126,7 +129,7 @@ tabyl(mydata$state)
 
 Las observaciones con estado _"undefined"_ suponen menos del 1% del total. Por ello, y por el hecho de que el número total de observaciones es muy amplio, vamos a eliminar las observaciones asociadas:
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 mydata <- subset(mydata, state != "undefined" & state != "live")
 # Creamos un factor nuevo para elminar las categorías descartadas
 mydata$state <- as.factor(as.character(mydata$state))
@@ -136,19 +139,179 @@ tabyl(mydata$state)
 
 Por otro lado, vemos que existe un valor anómalo ("N,0\") en la variable country. Este valor probablemente se deba a un error a la hora de hacer el scrapping de los datos. Comprobamos el número de observaciones afectadas:
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 nrow(subset(mydata, (country == "N,0\"")))
 ```
 
 Y procedemos de forma análoga a la anterior: el número de observaciones afectadas es despreciable comparado con el total, y por tanto se pueden descartar sin problemas:
 
-```{r echo=TRUE, message=FALSE, warning=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 mydata <- subset(mydata, (country != "N,0\""))
 # Creamos un factor nuevo para elminar la categoría incorrecta
 mydata$country <- as.factor(as.character(mydata$country))
 ```
 
+Para el resto de variables cualitativas no se observa ningún valor que pueda representar un valor perdido o erróneo. 
+
 ## Valores extremos
+
+Vamos a analizar las variables cuantitativas en búsqueda de valores extremos. 
+
+### Patrocinadores (backers)
+
+Esta variable representa al número de patrocinadores que han aportado dinero a la iniciativa.  Vamos a comprobar la distribución de los valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$backers)
+hist(mydata$backers)
+boxplot(mydata$backers)
+```
+
+Vemos que existen valores muy extremos. El 75% de los datos (3er cuartil) está por debajo de 57 patrocinadores. Sin embargo, existen valores superiores a 200000. Vamos a comprobar a cuantas iniciativas han contribuído más de 100000 personas:
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+nrow(subset(mydata, backers > 100000))
+```
+
+Únicamente 3, por lo que podría tratarse de datos erróneos. Comprobamos estas observaciones en el set original:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+subset(original, backers > 100000)
+```
+
+Acudiendo a Kickstarter, comprobamos que estos valores son correctos, y que se corresponden a las iniciativas que históricamente han tenido más exito en esta plataforma:
+
+* [Fidget Cube: A Vinyl Desk Toy](https://www.kickstarter.com/projects/antsylabs/fidget-cube-a-vinyl-desk-toy?lang=es)
+* [https://www.kickstarter.com/projects/elanlee/exploding-kittens?lang=es](https://www.kickstarter.com/projects/antsylabs/fidget-cube-a-vinyl-desk-toy?lang=es)
+* [Bring Reading Rainbow Back for Every Child, Everywhere!](https://www.kickstarter.com/projects/readingrainbow/bring-reading-rainbow-back-for-every-child-everywh?lang=es)
+
+Por tanto, son observaciones legítimas que no se deben descartar. Vamos a comprobar si es posible establecer un valor máximo para esta variable sin introducir sesgo en los datos. Por intuición, las iniciativas con un número alto de patrocinadores salen adelante. Vamos a identificar la observación con mayor número de patrocinadores que NO ha salido adelante:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+aux <- mydata[mydata$state != "successful",]
+aux <- aux[order(-aux$backers),]
+head(aux, n = 1)
+```
+
+Vamos a comprobar cuántas observaciones existen con un número superior de patrocinadores (y que han salido adelante):
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+nrow(mydata[mydata$backers > 20632,])
+```
+
+Únicamente 76. Esto quiere decir que imputando el valor 20632 como valor máximo eliminaríamos los valores más extremos sin alterar la información del set de datos. Vamos a comprobar las tablas de frecuencias para valores inferiores, puesto que seguramente la frecuencia de las iniciativas que han tenido éxito es superior al resto de resultados:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+tabyl(mydata[mydata$backers > 100,]$state)
+tabyl(mydata[mydata$backers > 250,]$state)
+tabyl(mydata[mydata$backers > 500,]$state)
+tabyl(mydata[mydata$backers > 1000,]$state)
+tabyl(mydata[mydata$backers > 2000,]$state)
+```
+
+Vemos que a partir de 1000 patrocinadores, la frecuencia de éxito es de prácticamente un 96.7%. Por tanto, si imputamos el 1000 como valor máximo al número de patrocinadores conseguiremos eliminar valores extremos manteniendo un resultado prácticamente igual al original. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+nrow(mydata[mydata$backers > 1000,])
+mydata <- within(mydata, backers[backers > 1000] <- 1000)
+```
+
+Volvemos a comprobar la distribución de los valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$backers)
+hist(mydata$backers)
+boxplot(mydata$backers)
+```
+
+Todos los valores superiores al valore del tercer cuartil (57) + 1.5 el valor del rango intercuartílico se considerarían outliners. Sin embargo, esto es correcto puesto que la mayoría de inciativas tienen muy pocos patrocinadores: la mediana, estimador más robusto que la media en este caso, toma el 12 que sigue siendo muy lejano al valor que hemos establecido como valor máximo. 
+
+Más adelante trataremos de analizar la normalidad de estos datos. 
+
+### Cantidad recaudada (usd_pledged_real)
+
+Esta variable es la candidad de dinero recaudado para poder realizar el proyecto. Vamos a comprobar la distribución de los valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$usd_pledged_real)
+hist(mydata$usd_pledged_real)
+boxplot(mydata$usd_pledged_real)
+```
+
+Al igual que en el caso anterior, también existen valore extremos (basta con observar la gran diferencia entre la media, la mediana y el valor máximo). Vamos a comprobar las observaciones con los valores máximos para esta variable, y vamos a tratar de identificar si éstos son correctos: 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+aux <- original[order(-original$usd_pledged_real),]
+head(aux, n = 2)
+```
+
+Acudiendo a Kickstarter vemos que estos valores extremos son correctos y se corresponden también a proyectos con mucho éxito. 
+
+* [Pebble Time - Awesome Smartwatch](https://www.kickstarter.com/projects/getpebble/pebble-time-awesome-smartwatch-no-compromises?lang=es)
+* [COOLEST COOLER](https://www.kickstarter.com/projects/ryangrepper/coolest-cooler-21st-century-cooler-thats-actually?lang=es)
+
+Vamos a proceder de forma análoga al subapartado anterior. Vamos a tratar de identificar, un valor valor máximo que se pudiese asignar a esta variable alterar mucho el set de datos original.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+tabyl(mydata[mydata$usd_pledged_real > 10000,]$state)
+tabyl(mydata[mydata$usd_pledged_real > 100000,]$state)
+tabyl(mydata[mydata$usd_pledged_real > 1000000,]$state)
+```
+
+A partir de 100000$, el 95% de los proyectos salen adelante, con lo que podríamos imputar este valor como valor máximo introduciendo un sesgo mínimo en nuestros datos:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+nrow(mydata[mydata$usd_pledged_real > 100000,])
+mydata <- within(mydata, usd_pledged_real[usd_pledged_real > 100000] <- 100000)
+```
+
+Volvemos a comprobar la distribución de los valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$usd_pledged_real)
+hist(mydata$usd_pledged_real)
+str(boxplot(mydata$usd_pledged_real))
+```
+
+De forma análoga a la variable anterior, imputado un valor máximo se ha conseguido limitar los valores más extremos. Sin emargo, dado que la recaudación de la mayoría de proyectos está muy lejos de la de los proyectos con mas éxisto, éstos se siguen considerando como outliners. 
+
+### Cantidad objetivo (usd_goal_real)
+### Duración campaña (duration)
+Vamos a comprobar la distribución de valores de la variable derivada al inicio:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$duration)
+
+par(mfrow=c(1,2))
+hist(mydata$duration)
+boxplot(mydata$duration)
+```
+
+Vemos que en este caso también existen valores muy extremos. El valor máximo son 16739 días (45 años), lo que supone que se trata de un valor erróneo. Vamos a comprobar cuantas iniciativas hay con más 100 días de duración:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+nrow(subset(mydata, duration > 100))
+```
+
+Únicamente 7, por lo que probablemente se deba a un error en los datos iniciales o en el cálculo de la variable. Para comprobarlo, vamos a examinar las observaciones asociadas en el set de datos inicial:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+subset(original, duration > 100)
+```
+
+Vemos que el error se debe a que la fecha de inicio de algunas iniciativas está mal informada (1970-01-01). Se trata del valor inicial del formato [epoch](https://en.wikipedia.org/wiki/Unix_time), por lo que seguramente se trate de valores perdidos. Eliminamos estas observaciones, y volvemos a analizar la distribución de valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Eliminamos observaciones con valores incorrectos
+mydata <- subset(mydata, duration < 100)
+
+summary(mydata$duration)
+
+par(mfrow=c(1,2))
+hist(mydata$duration)
+boxplot(mydata$duration)
+```
+
+Vemos que ahora existen valores extremos, pero correctos: la campaña más larga se situa en torno a los 3 meses, mientras que tanto el valor medio como el mediano están en torno a un mes.  
 
 # Análisis de datos
 
