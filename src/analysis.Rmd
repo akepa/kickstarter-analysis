@@ -50,9 +50,12 @@ El listado completo de variables es el siguiente:
 13. __USD Pledged Real__. Numérico. Conversión de la variable _Pledged_ a la divisa USD, realizado por el autor del dataset.
 14. __USD Goal Real__. Numérico. Conversión de la variable _Goal_ a la divisa USD, realizado por el autor del dataset.
 
-A partir de estas variables de entradas se intenta predecir cómo acabará una iniciativa. Este estado final de una iniciativa se indica en el campo state: 
+Este estado final de una iniciativa se indica en el campo state: 
 
 1. __state__. Categórico. Resultado de la iniciativa al finalizar el plazo. 
+
+__El objetivo de este set de datos es intentar predecir el estado final de una iniciativa a partir de los predictores mencionados anteriormente. Para ello, el primer paso (y el problema que trataremos de resolver con esta práctica), es tratar de descubrir si existen diferencias significativas de los predictores asociadas a los distintos estados de los proyectos__.
+
 
 ### Carga de datos
 
@@ -163,6 +166,7 @@ Esta variable representa al número de patrocinadores que han aportado dinero a l
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 summary(mydata$backers)
+par(mfrow=c(1,2))
 hist(mydata$backers)
 boxplot(mydata$backers)
 ```
@@ -172,7 +176,7 @@ Vemos que existen valores muy extremos. El 75% de los datos (3er cuartil) está p
 nrow(subset(mydata, backers > 100000))
 ```
 
-Únicamente 3, por lo que podría tratarse de datos erróneos. Comprobamos estas observaciones en el set original:
+Comprobamos estas observaciones en el set original:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 subset(original, backers > 100000)
@@ -184,48 +188,18 @@ Acudiendo a Kickstarter, comprobamos que estos valores son correctos, y que se c
 * [https://www.kickstarter.com/projects/elanlee/exploding-kittens?lang=es](https://www.kickstarter.com/projects/antsylabs/fidget-cube-a-vinyl-desk-toy?lang=es)
 * [Bring Reading Rainbow Back for Every Child, Everywhere!](https://www.kickstarter.com/projects/readingrainbow/bring-reading-rainbow-back-for-every-child-everywh?lang=es)
 
-Por tanto, son observaciones legítimas que no se deben descartar. Vamos a comprobar si es posible establecer un valor máximo para esta variable sin introducir sesgo en los datos. Por intuición, las iniciativas con un número alto de patrocinadores salen adelante. Vamos a identificar la observación con mayor número de patrocinadores que NO ha salido adelante:
+Por tanto, son observaciones legítimas que no se deben descartar. Dada la distribución de valores, la distribución de los datos asemeja una distribución exponencial. Vamos a repetir el análisis aplicado al logaritmo del valor original:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-aux <- mydata[mydata$state != "successful",]
-aux <- aux[order(-aux$backers),]
-head(aux, n = 1)
+summary(log(mydata$backers))
+
+par(mfrow=c(1,2))
+hist(log(mydata$backers))
+#curve(dnorm(x, mean=log(mydata$backers), sd=sd(log(mydata$backers))), col="red", lwd=2, add=TRUE, yaxt="n")
+boxplot(log(mydata$backers))
 ```
 
-Vamos a comprobar cuántas observaciones existen con un número superior de patrocinadores (y que han salido adelante):
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-nrow(mydata[mydata$backers > 20632,])
-```
-
-Únicamente 76. Esto quiere decir que imputando el valor 20632 como valor máximo eliminaríamos los valores más extremos sin alterar la información del set de datos. Vamos a comprobar las tablas de frecuencias para valores inferiores, puesto que seguramente la frecuencia de las iniciativas que han tenido éxito es superior al resto de resultados:
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-tabyl(mydata[mydata$backers > 100,]$state)
-tabyl(mydata[mydata$backers > 250,]$state)
-tabyl(mydata[mydata$backers > 500,]$state)
-tabyl(mydata[mydata$backers > 1000,]$state)
-tabyl(mydata[mydata$backers > 2000,]$state)
-```
-
-Vemos que a partir de 1000 patrocinadores, la frecuencia de éxito es de prácticamente un 96.7%. Por tanto, si imputamos el 1000 como valor máximo al número de patrocinadores conseguiremos eliminar valores extremos manteniendo un resultado prácticamente igual al original. 
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-nrow(mydata[mydata$backers > 1000,])
-mydata <- within(mydata, backers[backers > 1000] <- 1000)
-```
-
-Volvemos a comprobar la distribución de los valores:
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-summary(mydata$backers)
-hist(mydata$backers)
-boxplot(mydata$backers)
-```
-
-Todos los valores superiores al valore del tercer cuartil (57) + 1.5 el valor del rango intercuartílico se considerarían outliners. Sin embargo, esto es correcto puesto que la mayoría de inciativas tienen muy pocos patrocinadores: la mediana, estimador más robusto que la media en este caso, toma el 12 que sigue siendo muy lejano al valor que hemos establecido como valor máximo. 
-
-Más adelante trataremos de analizar la normalidad de estos datos. 
+El histograma anterior se asemeja a una distribución normal, por lo que podemos asumir que los valore extremos anteriores son 
 
 ### Cantidad recaudada (usd_pledged_real)
 
@@ -233,11 +207,12 @@ Esta variable es la candidad de dinero recaudado para poder realizar el proyecto
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 summary(mydata$usd_pledged_real)
+par(mfrow=c(1,2))
 hist(mydata$usd_pledged_real)
 boxplot(mydata$usd_pledged_real)
 ```
 
-Al igual que en el caso anterior, también existen valore extremos (basta con observar la gran diferencia entre la media, la mediana y el valor máximo). Vamos a comprobar las observaciones con los valores máximos para esta variable, y vamos a tratar de identificar si éstos son correctos: 
+Al igual que en el caso anterior, también existen valore extremos (basta con observar la gran diferencia entre la media, la mediana y el valor máximo). Vamos a extraer las observaciones con los valores más altos de eta variable: 
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 aux <- original[order(-original$usd_pledged_real),]
@@ -249,32 +224,42 @@ Acudiendo a Kickstarter vemos que estos valores extremos son correctos y se corr
 * [Pebble Time - Awesome Smartwatch](https://www.kickstarter.com/projects/getpebble/pebble-time-awesome-smartwatch-no-compromises?lang=es)
 * [COOLEST COOLER](https://www.kickstarter.com/projects/ryangrepper/coolest-cooler-21st-century-cooler-thats-actually?lang=es)
 
-Vamos a proceder de forma análoga al subapartado anterior. Vamos a tratar de identificar, un valor valor máximo que se pudiese asignar a esta variable alterar mucho el set de datos original.
+De forma análoga a como se ha procedido anteriormente, vamos a observar como se distribuyen estos valores considerando que se distribuyen de forma exponencial. Aplicamos el logaritmo de los valores:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-tabyl(mydata[mydata$usd_pledged_real > 10000,]$state)
-tabyl(mydata[mydata$usd_pledged_real > 100000,]$state)
-tabyl(mydata[mydata$usd_pledged_real > 1000000,]$state)
+summary(log(mydata$usd_pledged_real))
+
+par(mfrow=c(1,2))
+hist(log(mydata$usd_pledged_real))
+boxplot(log(mydata$usd_pledged_real))
 ```
 
-A partir de 100000$, el 95% de los proyectos salen adelante, con lo que podríamos imputar este valor como valor máximo introduciendo un sesgo mínimo en nuestros datos:
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-nrow(mydata[mydata$usd_pledged_real > 100000,])
-mydata <- within(mydata, usd_pledged_real[usd_pledged_real > 100000] <- 100000)
-```
-
-Volvemos a comprobar la distribución de los valores:
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-summary(mydata$usd_pledged_real)
-hist(mydata$usd_pledged_real)
-str(boxplot(mydata$usd_pledged_real))
-```
-
-De forma análoga a la variable anterior, imputado un valor máximo se ha conseguido limitar los valores más extremos. Sin emargo, dado que la recaudación de la mayoría de proyectos está muy lejos de la de los proyectos con mas éxisto, éstos se siguen considerando como outliners. 
+Y vemos que éstos se asemejan a una distribucion normal. Bajo esta distribución vemos que siguen existiendo ciertos outliners, pero como hemos visto, éstos se corresponden a los proyectos que mas éxito han tenido en la plataforma. 
 
 ### Cantidad objetivo (usd_goal_real)
+
+Esta variable representa la cantidad que tienen como objetivo recaudar los proyectos. Vamos a observar la distribución de los valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$usd_goal_real)
+
+par(mfrow=c(1,2))
+hist(mydata$usd_goal_real)
+boxplot(mydata$usd_goal_real)
+```
+
+De forma análoga a las dos variables anteriores, la distribución se asemeja a una distribución exponencial. Vamos a aplicar la función logaritmo:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(log(mydata$usd_goal_real))
+
+par(mfrow=c(1,2))
+hist(log(mydata$usd_goal_real))
+boxplot(log(mydata$usd_goal_real))
+```
+
+En los gráficos anteriores vemos que, de forma análoga a las variables anteriores, los valores extremos se debían a que los datos no se distribuyen bajo una distribución normal. 
+
 ### Duración campaña (duration)
 Vamos a comprobar la distribución de valores de la variable derivada al inicio:
 
@@ -311,15 +296,16 @@ hist(mydata$duration)
 boxplot(mydata$duration)
 ```
 
-Vemos que ahora existen valores extremos, pero correctos: la campaña más larga se situa en torno a los 3 meses, mientras que tanto el valor medio como el mediano están en torno a un mes.  
+Vemos que ahora existen valores extremos, pero correctos: la campaña más larga se situa en torno a los 3 meses, mientras que tanto el valor medio como el mediano están en torno a un mes. La distribución que se observa en el histograma se asemeja a una distribución normal. 
 
 # Análisis de datos
 
 # Representación de resultados
 
 # Conclusión
+(Falta completar)
 
 # Referencias y bibliografía
-
+(Falta completar)
 
 
