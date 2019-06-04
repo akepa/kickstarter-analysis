@@ -24,6 +24,12 @@ library(janitor)
 library(randomForest)
 library(ggplot2)
 library(gmodels)
+library(goft)
+library(qualityTools)
+library(EnvStats)
+library(DescTools)
+#library(MASS)
+
 ```
 
 # Introducción
@@ -188,18 +194,90 @@ Acudiendo a Kickstarter, comprobamos que estos valores son correctos, y que se c
 * [https://www.kickstarter.com/projects/elanlee/exploding-kittens?lang=es](https://www.kickstarter.com/projects/antsylabs/fidget-cube-a-vinyl-desk-toy?lang=es)
 * [Bring Reading Rainbow Back for Every Child, Everywhere!](https://www.kickstarter.com/projects/readingrainbow/bring-reading-rainbow-back-for-every-child-everywh?lang=es)
 
-Por tanto, son observaciones legítimas que no se deben descartar. Dada la distribución de valores, la distribución de los datos asemeja una distribución exponencial. Vamos a repetir el análisis aplicado al logaritmo del valor original:
+Por tanto, son observaciones legítimas que no se deben descartar. Sin embargo, y por intuición, las iniciativas con un número alto de patrocinadores salen adelante. Vamos a identificar la observación con mayor número de patrocinadores que NO ha salido adelante:
 
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+aux <- mydata[mydata$state != "successful",]
+aux <- aux[order(-aux$backers),]
+head(aux, n = 1)
+```
+
+Vamos a comprobar cuántas observaciones existen con un mayor número de patrocinadores (y que han salido adelante):
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+nrow(mydata[mydata$backers > 20632,])
+```
+
+Únicamente 79. Esto quiere decir, que imputando el valor 20632 a todas estas observaciones, obtendríamos el mismo resultado y eliminaríamos valores extremos. Sin embargo, para valores inferiores, seguramente la frecuencia de las iniciativas que han tenido éxito es mucho superior al resto de resultados:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+tabyl(mydata[mydata$backers > 100,]$state)
+tabyl(mydata[mydata$backers > 250,]$state)
+tabyl(mydata[mydata$backers > 500,]$state)
+tabyl(mydata[mydata$backers > 1000,]$state)
+tabyl(mydata[mydata$backers > 2000,]$state)
+```
+
+Vemos que a partir de 1000 patrocinadores, la frecuencia de éxito es de prácticamente un 95%. Por tanto, si imputamos el 1000 como valor máximo al número de patrocinadores, conseguiremos eliminar valores extremos manteniendo un resultado prácticamente igual al original. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+nrow(mydata[mydata$backers > 1000,])
+mydata <- within(mydata, backers[backers > 1000] <- 1000)
+```
+
+Volvemos a comprobar la distribución de los valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+summary(mydata$backers)
+par(mfrow=c(1,2))
+hist(mydata$backers)
+boxplot(mydata$backers)
+```
+
+Vemos que de esta forma sigue habiendo valores extremos. Sin embargo, esto probablemente se deba a que la distribución no sea normal. Si se aplica la función log, se puede apreciar que ya no existen datos fuera del rango intercuartílico:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
 summary(log(mydata$backers))
-
 par(mfrow=c(1,2))
 hist(log(mydata$backers))
-#curve(dnorm(x, mean=log(mydata$backers), sd=sd(log(mydata$backers))), col="red", lwd=2, add=TRUE, yaxt="n")
 boxplot(log(mydata$backers))
 ```
 
-El histograma anterior se asemeja a una distribución normal, por lo que podemos asumir que los valore extremos anteriores son 
+### Cantidad objetivo (usd_goal_real)
+
+Esta variable representa la cantidad que tienen como objetivo recaudar los proyectos. Vamos a observar la distribución de los valores:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$usd_goal_real)
+
+par(mfrow=c(1,2))
+hist(mydata$usd_goal_real)
+boxplot(mydata$usd_goal_real)
+```
+
+Vemos que en este caso también existen valores extremos. Vamos a comprobar las observaciones asociadas:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+aux <- original[order(-original$usd_goal_real),]
+head(aux, n = 3)
+```
+
+De forma análoga a la variable de _backers_, acudimos a Kickstarter para verificar que, efectivamente, son iniciativas que intentaron recaudar esa cantidad de dinero:
+
+* [FUCK Potato Salad. Paleo Potato Brownies!](https://www.kickstarter.com/projects/2095375022/fuck-potato-salad-lets-bake-potato-brownies?ref=category_location)
+* [A Celtic Lovestory](https://www.kickstarter.com/projects/245190432/a-celtic-lovestory?ref=category)
+* [Hydroponic's Skyscraper](https://www.kickstarter.com/projects/2099347793/hydroponics-skyscraperun-gratte-ciel-hydroponiquee?ref=category_location)
+
+Dado que aparenemente son proyectos que se crearon como broma, probablemente podemos eliminar valores extremos de la misma forma que hemos hecho con la variable anterior. Vamos a comprobar la frecuencia con de los resultados, filtrando por la cantidad objetivo.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+tabyl(mydata[mydata$usd_goal_real > 100000,]$state)
+tabyl(mydata[mydata$usd_goal_real > 1000000,]$state)
+tabyl(mydata[mydata$usd_goal_real > 10000000,]$state)
+tabyl(mydata[mydata$usd_goal_real > 50000000,]$state)
+```
+
+En este caso no observamos un patrón tan significativo como en la variable anterior, por lo que no se realizará la imputación de un valor máximo para evitar la pérdida de información. 
 
 ### Cantidad recaudada (usd_pledged_real)
 
@@ -224,7 +302,30 @@ Acudiendo a Kickstarter vemos que estos valores extremos son correctos y se corr
 * [Pebble Time - Awesome Smartwatch](https://www.kickstarter.com/projects/getpebble/pebble-time-awesome-smartwatch-no-compromises?lang=es)
 * [COOLEST COOLER](https://www.kickstarter.com/projects/ryangrepper/coolest-cooler-21st-century-cooler-thats-actually?lang=es)
 
-De forma análoga a como se ha procedido anteriormente, vamos a observar como se distribuyen estos valores considerando que se distribuyen de forma exponencial. Aplicamos el logaritmo de los valores:
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+tabyl(mydata[mydata$usd_pledged_real > 10000,]$state)
+tabyl(mydata[mydata$usd_pledged_real > 100000,]$state)
+
+```
+
+A partir de 100000 USD recaudados, el 95% de los proyectos acaban con éxito, por lo que podemos imputar este valor máximo para reducir los valores extremos sin perder apenas información en los datos:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+nrow(mydata[mydata$usd_pledged_real > 100000,])
+mydata <- within(mydata, usd_pledged_real[usd_pledged_real > 100000] <- 100000)
+```
+
+Volvemos a visualizar los datos, y vemos que no parecen ajustarse a una distribución normal:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+summary(mydata$usd_pledged_real)
+
+par(mfrow=c(1,2))
+hist(mydata$usd_pledged_real)
+boxplot(mydata$usd_pledged_real)
+```
+
+Sin embargo, en el caso de aplicar el logaritmo, sí que parece que podría tratarse de una distribución LogNormal. 
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 summary(log(mydata$usd_pledged_real))
@@ -234,31 +335,6 @@ hist(log(mydata$usd_pledged_real))
 boxplot(log(mydata$usd_pledged_real))
 ```
 
-Y vemos que éstos se asemejan a una distribucion normal. Bajo esta distribución vemos que siguen existiendo ciertos outliners, pero como hemos visto, éstos se corresponden a los proyectos que mas éxito han tenido en la plataforma. 
-
-### Cantidad objetivo (usd_goal_real)
-
-Esta variable representa la cantidad que tienen como objetivo recaudar los proyectos. Vamos a observar la distribución de los valores:
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-summary(mydata$usd_goal_real)
-
-par(mfrow=c(1,2))
-hist(mydata$usd_goal_real)
-boxplot(mydata$usd_goal_real)
-```
-
-De forma análoga a las dos variables anteriores, la distribución se asemeja a una distribución exponencial. Vamos a aplicar la función logaritmo:
-
-```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-summary(log(mydata$usd_goal_real))
-
-par(mfrow=c(1,2))
-hist(log(mydata$usd_goal_real))
-boxplot(log(mydata$usd_goal_real))
-```
-
-En los gráficos anteriores vemos que, de forma análoga a las variables anteriores, los valores extremos se debían a que los datos no se distribuyen bajo una distribución normal. 
 
 ### Duración campaña (duration)
 Vamos a comprobar la distribución de valores de la variable derivada al inicio:
@@ -296,30 +372,28 @@ hist(mydata$duration)
 boxplot(mydata$duration)
 ```
 
-Vemos que ahora existen valores extremos, pero correctos: la campaña más larga se situa en torno a los 3 meses, mientras que tanto el valor medio como el mediano están en torno a un mes. La distribución que se observa en el histograma se asemeja a una distribución normal. 
+Vemos que ahora existen valores extremos, pero correctos: la campaña más larga se situa en torno a los 3 meses, mientras que tanto el valor medio como el mediano están en torno a un mes. 
 
 # Análisis de datos
 
 ## Análisis de normalidad
 
-Como hemos visto en el apartado anterior, las variables cuantitativas "backers", "usd_pledged_real" y "usd_goal_real" se distribuyen bajo una distribución exponencial, por lo que no es necesario comprobar su normalidad. 
-
-La única variable que se haría falta comprobar es "duration". Para ello, aplicamos el test Shapiro-Wilk, donde planteamos las siguientes hipótesis:
-
-$$H_{0}: \text{La variable se distribuye normalmente}$$ 
-
-$$H_{1}:  \text{La variable NO se distribuye normalmente}$$
-Suponemos un nivel de significación del 0.05. 
+En el apartado de valores extremos se ha comprobado a simple vista que las variables no siguen una distribución normal. Sin embargo, dada la forma del histograma es posible que sigan una distribución LogNormal o exponencial. 
+Para ello, visualizamos en primer lugar el histograma del logaritmo de estas variables:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-#Hace falta una muestra, porque el tamaño máximo aceptado por el test es de 5000 observaciones. 
-set.seed(123)
-sample <- mydata[sample(1:nrow(mydata), 5000, replace=FALSE),]
-#Test
-shapiro.test(as.numeric(sample$duration))
+par(mfrow=c(1,2))
+hist(log(mydata$backers), main = "Backers")
+hist(log(mydata$duration), main = "Duration")
+hist(log(mydata$usd_pledged_real), main = "Pledged")
+hist(log(mydata$usd_goal_real), main = "Goal")
+
+summary(log(dplyr::select(mydata, backers, duration, usd_pledged_real, usd_goal_real)))
 ```
 
-El p-value es cercano a 0, por lo que rechazamos la hipótesis nula y aceptamos la alternativa. Esto es, que la variable "duration" no se distribuye de forma normal.  
+Backers y Duration claramente no siguen una distribución LogNormal. Las variables Pledged y Goal, a pesar de tener una forma similar a la de una distribución normal, no se pueden corresponder a una distribución LogNormal por tener valores negativos. 
+
+Dado que a simple vista se puede comprobar que los datos no siguen una distribución normal, no es necesario aplicar el [Test de Shapiro-Wilk](https://es.wikipedia.org/wiki/Test_de_Shapiro%E2%80%93Wilk) ni analizar los diagramas QQ. Tampoco se realizará [la transformación de Box-Cox](https://es.wikipedia.org/wiki/Transformaci%C3%B3n_Box-Cox) al estar los datos muy alejados de una distribución normal, por lo que a la hora de realizar el análisis de los datos se aplicará algoritmos no paramétricos. 
 
 ## Selección de datos
 
@@ -348,7 +422,7 @@ Y vemos que el valor es prácticamente 0, por lo que rechazamos la hipótesis nula
 Para las variables cuantitativas, vamos a calcular la matrix de correlación usando como método la correlación de Spearman, al no distribuirse las variables de forma normal:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-num_vars = select(mydata, backers, country, usd_pledged_real, usd_goal_real, duration)
+num_vars = dplyr::select(mydata, backers, country, usd_pledged_real, usd_goal_real, duration)
 round(cor(x = data.matrix(num_vars), method = "spearman"), 3)
 ```
 
@@ -357,13 +431,44 @@ Vemos que el número de patrocinadores y el dinero recaudado tienen una relación 
 Eliminamos del set de datos aquellas variables que no tendremos en cuenta para el análisis:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-mydata <- select(mydata, -currency, -category, -backers)
+#mydata <- dplyr::select(mydata, -currency, -category, -backers)
 ```
 
 Por lo que para el análisis dispondremos de 5 variables, y la etiqueta de clase:
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 glimpse(mydata)
 ```
+
+## Análisis descriptivo y visual
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+tabyl(mydata$state)
+```
+
+
+## Análisis inferencial
+### Análisis de varianza unifactorial 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+kruskal.test(backers~main_category, data=mydata)
+
+qchisq(.95, df=14)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$main_category, y=mydata$usd_pledged_real)) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Satisfacción laboral por Sexo") + xlab("Sex") + ylab("Nivel de satisfacción")
+
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$main_category, y=log(mydata$usd_pledged_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Satisfacción laboral por Sexo") + xlab("Sex") + ylab("Nivel de satisfacción")
+
+
+r <- kruskal.test(log(usd_pledged_real)~main_category, data=mydata)
+
+
+```
+
 
 
 # Representación de resultados
