@@ -28,7 +28,7 @@ library(goft)
 library(qualityTools)
 library(EnvStats)
 library(DescTools)
-#library(MASS)
+library(FSA)
 
 ```
 
@@ -60,8 +60,7 @@ Este estado final de una iniciativa se indica en el campo state:
 
 1. __state__. Categórico. Resultado de la iniciativa al finalizar el plazo. 
 
-__El objetivo de este set de datos es intentar predecir el estado final de una iniciativa a partir de los predictores mencionados anteriormente. Para ello, el primer paso (y el problema que trataremos de resolver con esta práctica), es tratar de descubrir si existen diferencias significativas de los predictores asociadas a los distintos estados de los proyectos__.
-
+__El objetivo del análisis será tratar de entender qué variables tienen un impacto significativo en el resultado final o en la cantidad de dinero que consigue reunir un proyecto__.
 
 ### Carga de datos
 
@@ -88,7 +87,7 @@ glimpse(original)
 
 ## Selección de datos
 
-En el listado de variables de la sección anterior vemos que el set de datos incluye información duplicada. La cantidad objetivo está disponible en la moneda original de la promoción (_Goal_), así como su conversión a USD (_USD Goal Real_). Por otro lado, la cantidad final recaudada está disponible en la divisa original (_Pledged_), la conversión a USD realizada por la plataforma (_USD Pledged_), y la conversión a USD realizada por el autor del set de datos (_USD Goal Real_). Puesto que la información de estas variables es redundante, se va a mantener únicamente la versión estandarizada de estos datos. Esto es, la conversión de las dos variables realizadas por el autor del set de datos. 
+En el listado de variables de la sección anterior vemos que el set de datos incluye información duplicada. La cantidad objetivo está disponible en la moneda original de la promoción (_Goal_), así como su conversión a USD (_USD Goal Real_). Por otro lado, la cantidad final recaudada está disponible en la divisa original (_Pledged_), la conversión a USD realizada por la plataforma (_USD Pledged_), y la conversión a USD realizada por el autor del set de datos (_USD Pledged Real_). Puesto que la información de estas variables es redundante, se va a mantener únicamente la versión estandarizada de estos datos. Esto es, la conversión de las dos variables realizadas por el autor del set de datos. 
 
 Por otro lado, para realizar la analítica de datos no son necesarios los campos que identifican las observaciones (_ID_ y _Name_).
 
@@ -104,12 +103,21 @@ mydata$duration_tmp <- mydata$deadline - mydata$launched
 mydata$duration <- as.numeric(mydata$duration_tmp, units="days")
 original$duration <- as.numeric(mydata$duration_tmp, units="days")
 # Borrado de las variables innecesarias
-mydata <- select(mydata, -ID, -name, -goal, -pledged, -usd.pledged, -launched, -deadline, -duration_tmp)
+mydata <- dplyr::select(mydata, -ID, -name, -goal, -pledged, -usd.pledged, -launched, -deadline, -duration_tmp)
 # Resumen de los datos seleccionados
-glimpse(mydata)
 ```
 
-Como se puede observar en la tabla anterior, se ha reducido el set a ocho inputs y la etiqueta de clase.
+Finalmente, también puede ser interesante comprobar si una iniciativa ha conseguido recaudar el dinero que se proponía:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+mydata$goal_reached <- mydata$usd_pledged_real >= mydata$usd_goal_real
+```
+
+Como se puede observar en la tabla siguiente, se ha reducido el set a nueve inputs y la etiqueta de clase:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+glimpse(mydata)
+```
 
 # Limpieza de datos
 ## Valores perdidos
@@ -208,7 +216,7 @@ Vamos a comprobar cuántas observaciones existen con un mayor número de patrocina
 nrow(mydata[mydata$backers > 20632,])
 ```
 
-Únicamente 79. Esto quiere decir, que imputando el valor 20632 a todas estas observaciones, obtendríamos el mismo resultado y eliminaríamos valores extremos. Sin embargo, para valores inferiores, seguramente la frecuencia de las iniciativas que han tenido éxito es mucho superior al resto de resultados:
+Únicamente 76. Esto quiere decir que imputando el valor 20632 a todas estas observaciones obtendríamos el mismo resultado y eliminaríamos valores extremos. Sin embargo, para valores inferiores, seguramente la frecuencia de las iniciativas que han tenido éxito es mucho superior al resto de resultados:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 tabyl(mydata[mydata$backers > 100,]$state)
@@ -218,7 +226,7 @@ tabyl(mydata[mydata$backers > 1000,]$state)
 tabyl(mydata[mydata$backers > 2000,]$state)
 ```
 
-Vemos que a partir de 1000 patrocinadores, la frecuencia de éxito es de prácticamente un 95%. Por tanto, si imputamos el 1000 como valor máximo al número de patrocinadores, conseguiremos eliminar valores extremos manteniendo un resultado prácticamente igual al original. 
+Vemos que a partir de 1000 patrocinadores, la frecuencia de éxito es de prácticamente un 95%. Por tanto, si imputamos el 1000 como valor máximo al número de patrocinadores conseguiremos eliminar valores extremos sin apenas pérdida de información. 
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 nrow(mydata[mydata$backers > 1000,])
@@ -234,7 +242,7 @@ hist(mydata$backers)
 boxplot(mydata$backers)
 ```
 
-Vemos que de esta forma sigue habiendo valores extremos. Sin embargo, esto probablemente se deba a que la distribución no sea normal. Si se aplica la función log, se puede apreciar que ya no existen datos fuera del rango intercuartílico:
+Vemos que de esta forma sigue habiendo valores extremos. Sin embargo, esto probablemente se deba a que los datos no siguen una distribución normal. Aplicando el logaritmo se puede comprobar que no existen datos fuera del rango intercuartílico:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 summary(log(mydata$backers))
@@ -255,7 +263,7 @@ hist(mydata$usd_goal_real)
 boxplot(mydata$usd_goal_real)
 ```
 
-Vemos que en este caso también existen valores extremos. Vamos a comprobar las observaciones asociadas:
+Vemos que en este caso también existen valores extremos. Comprobamos las observaciones asociadas:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 aux <- original[order(-original$usd_goal_real),]
@@ -290,7 +298,7 @@ hist(mydata$usd_pledged_real)
 boxplot(mydata$usd_pledged_real)
 ```
 
-Al igual que en el caso anterior, también existen valore extremos (basta con observar la gran diferencia entre la media, la mediana y el valor máximo). Vamos a extraer las observaciones con los valores más altos de eta variable: 
+Al igual que en el caso anterior, también existen valore extremos (basta con observar la gran diferencia entre la media, la mediana y el valor máximo). Vamos a extraer las observaciones con los valores más altos de esta variable: 
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 aux <- original[order(-original$usd_pledged_real),]
@@ -298,6 +306,8 @@ head(aux, n = 2)
 ```
 
 Acudiendo a Kickstarter vemos que estos valores extremos son correctos y se corresponden también a proyectos con mucho éxito. 
+
+Vemos si es posible imputar un valor máximo:
 
 * [Pebble Time - Awesome Smartwatch](https://www.kickstarter.com/projects/getpebble/pebble-time-awesome-smartwatch-no-compromises?lang=es)
 * [COOLEST COOLER](https://www.kickstarter.com/projects/ryangrepper/coolest-cooler-21st-century-cooler-thats-actually?lang=es)
@@ -325,7 +335,7 @@ hist(mydata$usd_pledged_real)
 boxplot(mydata$usd_pledged_real)
 ```
 
-Sin embargo, en el caso de aplicar el logaritmo, sí que parece que podría tratarse de una distribución LogNormal. 
+Sin embargo, en el caso de aplicar el logaritmo, la distribución se asemeja a lo que podría ser una normal, con un aumento de frecuencia en el valor 0. 
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 summary(log(mydata$usd_pledged_real))
@@ -334,7 +344,6 @@ par(mfrow=c(1,2))
 hist(log(mydata$usd_pledged_real))
 boxplot(log(mydata$usd_pledged_real))
 ```
-
 
 ### Duración campaña (duration)
 Vamos a comprobar la distribución de valores de la variable derivada al inicio:
@@ -391,9 +400,39 @@ hist(log(mydata$usd_goal_real), main = "Goal")
 summary(log(dplyr::select(mydata, backers, duration, usd_pledged_real, usd_goal_real)))
 ```
 
-Backers y Duration claramente no siguen una distribución LogNormal. Las variables Pledged y Goal, a pesar de tener una forma similar a la de una distribución normal, no se pueden corresponder a una distribución LogNormal por tener valores negativos. 
+Backers y Duration claramente no siguen una distribución LogNormal, por lo que no es necesario aplicar ningún test. En cuanto a las variables Pledged y Goal, vamos a aplicar el test de [Test de Shapiro-Wilk](https://es.wikipedia.org/wiki/Test_de_Shapiro%E2%80%93Wilk) y a observar los diagramas QQ para validar si estas variables sí que siguen esta distribución. 
 
-Dado que a simple vista se puede comprobar que los datos no siguen una distribución normal, no es necesario aplicar el [Test de Shapiro-Wilk](https://es.wikipedia.org/wiki/Test_de_Shapiro%E2%80%93Wilk) ni analizar los diagramas QQ. Tampoco se realizará [la transformación de Box-Cox](https://es.wikipedia.org/wiki/Transformaci%C3%B3n_Box-Cox) al estar los datos muy alejados de una distribución normal, por lo que a la hora de realizar el análisis de los datos se aplicará algoritmos no paramétricos. 
+Sin embargo, dado que estas variables contienen el valor 0, antes de aplicar el logaritmo vamos a imputar un valor mínimo, puesto de lo contrario no se podría aplicar el tests al tener valores inválidos. Por otro lado, la implementación en R del test acepta como máximo 5000 observaciones, que obtendremos a partir de la muestra original por muestreo aleatorio. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+mydata <- within(mydata, usd_goal_real[usd_goal_real <= 0] <- 0.00001)
+mydata <- within(mydata, usd_pledged_real[usd_pledged_real <= 0] <- 0.00001)
+
+set.seed(123)
+sample <- mydata[sample(1:nrow(mydata), 5000, replace=FALSE),]
+```
+
+Comprobamos la variable Goal:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Goal
+summary(log(sample$usd_goal_real))
+shapiro.test(log(sample$usd_goal_real))
+qqnorm(log(sample$usd_goal_real))
+```
+
+Comprobamos la variable Pledged:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Pledged
+summary(log(sample$usd_pledged_real))
+shapiro.test(log(sample$usd_pledged_real))
+qqnorm(log(sample$usd_pledged_real))
+```
+
+Y vemos que en ambos casos, el p-value obtenido en el test es cercano a 0, por lo que se rechaza la hipótesis nula de que las variables siguen una distribución normal, y se acepta la alternativa (es decir, que no siguen una distribución normal, o log-normal en este caso). Esto se corrobora con el diagrama QQ, en el que se ve que la distribución no se ajusta a la diagonal. 
+
+Dado este resultado, no ampoco se realizará [la transformación de Box-Cox](https://es.wikipedia.org/wiki/Transformaci%C3%B3n_Box-Cox) al estar los datos muy alejados de una distribución normal, por lo que a la hora de realizar el análisis de los datos se aplicará algoritmos no paramétricos.
 
 ## Selección de datos
 
@@ -403,8 +442,8 @@ Vamos a proceder en primer lugar con las cuatro variables categóricas disponible
 
 En primer lugar, las variables "Category" y "Main Category" están correlacionadas por definición (la primera es un desglose de la segunda). Para realizar un análisis manual, vamos a quedarnos únicamente con la segunda, puesto que la primera tiene un número de valores posibles demasiado alto para ser manejable en un análisis no automatizado.
 
-Por otro lado, las variables "Country" y "Currency" probablemente sean dependientes. Vamos a realizar un 
-test [chi-square](https://en.wikipedia.org/wiki/Chi-squared_test) para verificar si se puede obviar una de ellas en el análisis. Planteamos las hipótesis, y supondremos un nivel de significación del 0.05:
+Por otro lado, las variables "Country" y "Currency" probablemente son dependientes. Vamos a realizar un 
+test [chi-square](https://en.wikipedia.org/wiki/Chi-squared_test) para verificar si se puede obviar una de ellas en la fase de análisis. Planteamos las hipótesis, y supondremos un nivel de significación del 0.05:
 
 $$H_{0}: \text{Las variables son independientes}$$ 
 
@@ -419,64 +458,143 @@ chisq.test(t )
 
 Y vemos que el valor es prácticamente 0, por lo que rechazamos la hipótesis nula y aceptamos la alternativa. Esto es, que las variables no son independientes. Por ello, vamos a excluir la variable "Currency" de los datos a analizar.
 
-Para las variables cuantitativas, vamos a calcular la matrix de correlación usando como método la correlación de Spearman, al no distribuirse las variables de forma normal:
+Para las variables cuantitativas, vamos a calcular la matrix de correlación usando como método la correlación de Spearman, dado que las variables no se ajustan a una distribución normal:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 num_vars = dplyr::select(mydata, backers, country, usd_pledged_real, usd_goal_real, duration)
 round(cor(x = data.matrix(num_vars), method = "spearman"), 3)
 ```
 
-Vemos que el número de patrocinadores y el dinero recaudado tienen una relación de correlación positiva, por lo que el análisis se realizará únicamente sobre una de las dos.
+Vemos que el número de patrocinadores y el dinero recaudado tienen una relación de correlación positiva, lo que significa que éstas no son independientes y por tanto se podría obviar una de ellas a la hora de realiar el análisis de datos. 
 
 Eliminamos del set de datos aquellas variables que no tendremos en cuenta para el análisis:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-#mydata <- dplyr::select(mydata, -currency, -category, -backers)
+mydata <- dplyr::select(mydata, -currency, -category, -backers)
 ```
 
-Por lo que para el análisis dispondremos de 5 variables, y la etiqueta de clase:
+Por lo que para el análisis dispondremos de seis variables, y la etiqueta de clase:
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 glimpse(mydata)
+
 ```
 
-## Análisis descriptivo y visual
+## Análisis descriptivo
+
+En primer lugar comprobamos las frecuencias del resultado de los proyectos:
+
+
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 tabyl(mydata$state)
 ```
 
+Vemos que XXX. 
+
+Vamos a comprobar si, a simple vista existen diferencias significativas en la tendencia central y en la dispersión del dinero recaudado en función de la categoría del proyecto.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$main_category, y=log(mydata$usd_pledged_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado")
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$state, y=log(mydata$usd_goal_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=state)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$goal_reached, y=mydata$duration)) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=goal_reached)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado")
+```
+
+
+
+
+En base a este análisis, podemos plantear las siguientes pruebas:
+* 
+* Aparentemente existen diferencias en las cantidades que recaudan los proyectos en función de la categoría. ¿
+
+
+
+
+
 
 ## Análisis inferencial
-### Análisis de varianza unifactorial 
+### Duración
+
+Vamos a comprobar si existe una diferencia significativa en la duración de los proyectos, entre aquellos proyectos que llegan a recaudar la cantidad objetivo, y aquellos que no. Como se ha podido observar en el boxplot de apartado de análisis descriptivo, las tendencias centrales son similares:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-kruskal.test(backers~main_category, data=mydata)
+reached <- mydata[mydata$goal_reached == TRUE,]$duration
+not_reached <- mydata[mydata$goal_reached == FALSE,]$duration
 
-qchisq(.95, df=14)
+# Medias
+mean(reached)
+mean(not_reached)
+# Medianas
+median(reached)
+median(not_reached)
 ```
+
+Dado que la variable duration no sigue una distribución normal, no es posible el empleo del test T. Por ello, vamos a usar el [test de Wilcoxon](https://es.wikipedia.org/wiki/Prueba_de_los_rangos_con_signo_de_Wilcoxon), que es la alternativa no paramétrica al anterior. Suponemos un nivel de significación del 0.05 y las hipótesis siguientes:
+
+$$H_{0}: \mu_{Reached} = \mu_{Not Reached} $$
+
+$$H_{1}: \mu_{Reached} \ne \mu_{Not Reached} $$ 
+
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-ggplot(data = mydata, aes(x=mydata$main_category, y=mydata$usd_pledged_real)) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Satisfacción laboral por Sexo") + xlab("Sex") + ylab("Nivel de satisfacción")
 
+wilcox.test(reached, not_reached, paired = FALSE, alternative = "two.sided")
 ```
+
+El p-value obtenido es cercano a 0, por lo que rechazaremos la hipótesis nula y aceptaremos la alternativa. Esto es, que la duración si que es distinta dependiendo de si un proyecto logra alcanzar la cantidad objetivo. 
+
+### Dinero recaudado por categoría 
+
+Vamos a probar si hay diferencias significativas en las cantidades medias recaudadas dependiendo del tipo de proyecto. Dado que hemos visto que los datos no siguen una distribución normal no podemos aplicar un análisis de varianza unifactorial (ANOVA), por lo que aplicaremos el test no paramétrico [Kruskal-Wallis](https://es.wikipedia.org/wiki/Prueba_de_Kruskal-Wallis) para comprobar si las medias de todas las categorías son iguales. Planteamos la hipótesis nula y alternativa, y suponemos un nivel de significación del 0.05:
+
+$$H_{0}: \text{Todas las medias son iguales}$$ 
+
+$$H_{1}:  \text{No todas las medias son iguales}$$
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-ggplot(data = mydata, aes(x=mydata$main_category, y=log(mydata$usd_pledged_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Satisfacción laboral por Sexo") + xlab("Sex") + ylab("Nivel de satisfacción")
-
-
-r <- kruskal.test(log(usd_pledged_real)~main_category, data=mydata)
-
-
+mydata$usd_pledged_real_log <- log(mydata$usd_pledged_real)
+kruskal.test(usd_pledged_real_log~main_category, data=mydata)
 ```
 
+Obtenemos un p-value cercano a cero, por lo que rechazamos la hipótesis nula: existe al menos alguna media significativamente distinta de las demás. 
 
+Para comprobar qué medias difieren significativamente de las demás vamos a aplicar el [test post hoc de Dunn](https://www.statisticshowto.datasciencecentral.com/dunns-test/). Este test no paramétrico permite realizar comparaciones múltiples, y es adecuado para muestras en las que los distintos grupos tienen un número distinto de observaciones como en este caso (REF1).
 
-# Representación de resultados
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+dunn_res <- dunnTest(usd_pledged_real_log~main_category,data=mydata,method="by")
+print(dunn_res,dunn.test.results=TRUE)
+```
+
+En la tabla anterior vemos el p-value asociado a la compración entre todos los pares de grupos. En esta comparación vemos que todas las medias son significativamente distintas salvo las de los siguientes pares de grupos:
+
+* Dance - Comics
+* Dance - Games
+* Journalism - Crafts
+* Publishing - Fashion
+* Theater - Dance
+* Theater - Games
 
 # Conclusión
-(Falta completar)
+
+A lo largo de esta práctica se ha podido obtener una serie de resultados que permiten entender la naturaleza de los proyectos de crowfunding.
+
+En primer lugar, durante la búsqueda de valores extremos se ha podido observar que existen proyectos con muchísimo más éxito (en cuanto a patrocinadores y dinero recaudado) que los demás, y cuyos valores se han tenido que suavizar para que no influyesen a la hora de aplicar la analítica de datos. 
+
+Por otro lado se ha podido comprobar que ninguna de las variables cuantitativas se ajusta a una distribución normal o log-normal, a pesar de que la distribución de valores sigue una curva similar a la gausiana aplicando el logaritmo sobre los valores reales. 
+
+El hecho de que ninguna de las variables siguiese una distribución normal ha obligado al uso de tests no paramétricos (y de menor poder estadístico) en la fase de analítica. 
+
+Como resultados destacables cabría mencionar que se ha podido observar que [TODO]
+
+Sin embargo, y como se ha comentado, la parte analítica de la práctica se ha visto impactada por la falta de conocimiento sobre cómo trabajar con datos que no siguen una distribución conocida. 
 
 # Referencias y bibliografía
 (Falta completar)
-
+(1)  https://rcompanion.org/rcompanion/d_06.html
 
