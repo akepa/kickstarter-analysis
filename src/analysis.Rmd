@@ -483,40 +483,61 @@ glimpse(mydata)
 
 En primer lugar comprobamos las frecuencias del resultado de los proyectos:
 
-
-
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
 tabyl(mydata$state)
 ```
 
-Vemos que XXX. 
-
-Vamos a comprobar si, a simple vista existen diferencias significativas en la tendencia central y en la dispersión del dinero recaudado en función de la categoría del proyecto.
+Vemos que, de forma global, únicamente el 40% de los proyectos acaban saliendo adelante. Vamos a comprobar si la frecuencia si algunas de las categorías de las variables cualitativas parecen tener frecuencias superiores a otras.
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-ggplot(data = mydata, aes(x=mydata$main_category, y=log(mydata$usd_pledged_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado")
+ggplot(data=mydata,aes(x=main_category,fill=state))+geom_bar(position="fill") + xlab("Categoría principal") + ylab("Resultado") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
+En esta gráfica vemos que categorías como "Dance" o "Theatre" tienen una frecuencia de éxito aproximádamente de aproximádamente el doble que otras como "Crafts" o Journalism. 
+
+También hay diferencias dependiendo del país:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-ggplot(data = mydata, aes(x=mydata$state, y=log(mydata$usd_goal_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=state)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado")
+ggplot(data=mydata,aes(x=country,fill=state))+geom_bar(position="fill") + xlab("País") + ylab("Resultado") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
+Iniciativas nacidas en Estados Unidos o Hong Kong tienen una frecuencia de éxito superior a la de otros países como, por ejemplo, Italia. 
+
+Finalmente, en el siguiente gráfico vemos que prácticamente la totalidad de iniciativas que alcanzan el objetivo tienen éxito. Sin embargo, también vemos que hay una frecuencia muy pequeña de iniciativas que, a pesar de alcanzar el objetivo, acaban cancelándose:
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
-ggplot(data = mydata, aes(x=mydata$goal_reached, y=mydata$duration)) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=goal_reached)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado")
+ggplot(data=mydata,aes(x=goal_reached,fill=state))+geom_bar(position="fill") + xlab("Objetivo alcanzado?") + ylab("Resultado")
 ```
 
+Vamos a comprobar ahora si existen diferencias significativas en el dinero recaudado dependiendo de la categoría de las iniciativas: 
 
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$main_category, y=log(mydata$usd_pledged_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
+En algunos casos esta diferencia es clara, como por ejemplo entre "Art" y "Comics". Sin embargo, en algunos casos enta diferencia no está tan clara, como entre "Dance" y "Design".
 
-En base a este análisis, podemos plantear las siguientes pruebas:
-* 
-* Aparentemente existen diferencias en las cantidades que recaudan los proyectos en función de la categoría. ¿
+Comprobamos también si, en general, la cantidad objetivo varía dependiendo de la categoría de la iniciativa:
 
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$main_category, y=log(mydata$usd_goal_real))) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=main_category)) + ggtitle("Dinero recaudado (log) por categoría") + xlab("Categoría") + ylab("Dinero recaudado") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
+Vemos que, en general, las inciativas tecnológicas tienen una cantidad a recaudar superior al resto de categorías. 
 
+Por último, comprobaremos si la duración influye en la cantidad recaudada o en el resultado final de los proyectos:
 
+```{r echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+ggplot(data = mydata, aes(x=mydata$goal_reached, y=mydata$duration)) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=goal_reached)) + ggtitle("Objetivo alcanzado?") + xlab("Categoría") + ylab("Duración")
 
+ggplot(data = mydata, aes(x=mydata$state, y=mydata$duration)) + stat_boxplot(geom ='errorbar') + geom_boxplot(aes(fill=state)) + ggtitle("Objetivo alcanzado?") + xlab("Resultado") + ylab("Duración")
+```
+
+Vemos que, a simple vista, parece que la duración no tiene una influencia significativa. 
+
+En base a este análisis descriptivo, podemos plantear las siguientes pruebas:
+* Verificar que no hay una diferencia significativa de la duración entre aquellos proyectos que salen adelante, y aquellos que no.
+* Dado que aparentemente existen diferencias entre las cantidades que recaudan los proyectos en función de su categoría, verificar qué categorías tienen cantidades recaudadas distintas a las demás. 
 
 ## Análisis inferencial
 ### Duración
@@ -590,9 +611,7 @@ Por otro lado se ha podido comprobar que ninguna de las variables cuantitativas 
 
 El hecho de que ninguna de las variables siguiese una distribución normal ha obligado al uso de tests no paramétricos (y de menor poder estadístico) en la fase de analítica. 
 
-Como resultados destacables cabría mencionar que se ha podido observar que [TODO]
-
-Sin embargo, y como se ha comentado, la parte analítica de la práctica se ha visto impactada por la falta de conocimiento sobre cómo trabajar con datos que no siguen una distribución conocida. 
+Los resultados obtenidos se pueden consultar en los apartados de análisis descriptivo y análisis inferencial. Sin embargo, la fase analítica de la práctica se ha visto impactada por el hecho de que los datos no siguiesen distribuciones conocidas, y por la falta de base teórica sólida sobre cómo tratar con este tipo de datos. 
 
 # Referencias y bibliografía
 (Falta completar)
